@@ -1,26 +1,198 @@
 ---
-title: "AdlerLakeErie_finalversion"
+title: "Adler Lake Erie Final Version "
 format: gfm
 editor: visual
 ---
+I worked on making this into a package by making more of my code into functions. At a certain point the more I touched it, the worse it got so I am handing it in as it is along with another simpler package that I made for a labmate. 
 
-## Quarto
+## Project Outline:
 
-Quarto enables you to weave together content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>.
+-   From original data file, check for appropriate key options
 
-## Running Code
+-   Tidy data from full classification -\> expanded
 
-When you click the **Render** button a document will be generated that includes both content and the output of embedded code. You can embed code like this:
+-   Function for counting abundance of all different entries for input column (level of classification), change NAs to "Unspecified'
 
-```{r}
-1 + 1
+-   Use key to filter for explicitly chitin-related organisms, per input column
+
+-   Plot Percent abundance of top 25
+
+-   Put into a package (two functions)
+
+```{r, warning=FALSE, message=FALSE}
+library(tidyverse)
+library(dplyr)
+library(shiny)
+library(stringr)
+library(ggplot2)
+library(tibble)
+rm(list=ls())
 ```
 
-You can add options to executable code like this
+Checking Key options:
 
 ```{r}
-#| echo: false
-2 * 2
+df1<-read_csv("FinalProject.csv")
+##Check primary key options: Unique per observation
+#key check function from: https://stackoverflow.com/questions/62199876/how-to-determine-primary-key
+
+findkeys <- function(x, max.columns = ncol(x) - 1L, find = 1L, digits = NA) {
+  isnum <- sapply(x, function(z) is.numeric(z) & !is.integer(z))
+  force(max.columns)
+  if (is.na(digits) || digits < 0) {
+    x <- x[, !isnum, drop = FALSE ]
+  } else {
+    possfactors <- lapply(x[,isnum], function(z) as.character(z - trunc(z)))
+    signif_digits <- sapply(possfactors, function(s) max(nchar(gsub("^0\\.?", "", gsub("(0{5,}|9{5,}).*", "", s)))))
+    remove <- signif_digits[ signif_digits > digits ]
+    message("#> Removing: ", paste(sQuote(names(remove)), collapse = ","))
+    x <- x[, setdiff(colnames(x), names(remove)), drop = FALSE]
+  }
+  max.columns <- min(c(max.columns, ncol(x)))
+  keys <- list()
+  if (max.columns < 1) {
+    warning("no columns found, no keys")
+    return(keys)
+  }
+  message("#> Columns : ", paste(sQuote(colnames(x)), collapse = ","))
+  for (i in seq_len(max.columns)) {
+    combs <- combn(names(x), i)
+    for (j in seq_len(ncol(combs))) {
+      uniq <- unique(x[, combs[,j], drop = FALSE ])
+      if (nrow(x) == nrow(uniq)) {
+        keys <- c(keys, list(combs[,j]))
+        if (find > 0 && length(keys) >= find) return(keys)
+      }
+    }
+  }
+  keys
+}
+
+#check df1 for keys - gives geneid for key
+checkdf1forkeys<-findkeys(df1)
+
+```
+#Tried for hours to build my own primary key check into a function- it is a data type problem
+key_check <-function(df, proposedkey){
+  columnnames<- df|>
+    colnames()|>
+    any({{proposedkey}})
+  if(columnnames == TRUE){
+    keynum<-df|> 
+      count({{proposedkey}})|> 
+      filter(n==1)|>
+      nrow()
+    orig_num<- df|> 
+      nrow()
+    setequal(keynum,orig_num)
+  } else{
+    stop("Bro your proposed key isn't a column in this df") 
+  }
+}
+#bruh1 should be TRUE, gives "Error: object 'geneid' not found"
+bruh1<-key_check(df1,geneid)
+
+#bruh2 should be TRUE, gives FALSE. browser() didn't help in troubleshooting 
+bruh2<- key_check(df1,'geneid')
+
+#bruh3 should stop the function 
+bruh3<- key_check(maybe,'n')
+
+#Outside of function it works: output is always TRUE?? replace df1 -> maybe and 'geneid'-> 'n'
+columnnames<- df1|>
+    colnames()
+maybeitworks<-any(('geneid') == columnnames)
+if(maybeitworks==TRUE){
+     keynum<-df1|> 
+      count(geneid)|> 
+      filter(n==1)|>
+      nrow()
+    orig_num<- df1|> 
+      nrow()
+    setequal(keynum,orig_num)
+  } else{
+    stop("Bro your proposed key isn't a column in this df")  
+  }
+
+df1 |> 
+  count(geneid) |> 
+  filter(n > 1)
+df1|>
+  count(...1)|>
+  filter(n > 1)
+#No N.As
+df1 |> 
+  filter(is.na(geneid))
+df1|>
+  filter(is.na(...1))
+#Either works as a key, I like geneid more because it feels intuitive
+
+
+Tidying Data:
+
+In class it was pointed out that I had a sample coming up as "kingdom" when it wasn't a kingdom. So I went through the classifications and compared the number of entries to the classification_level column and found that it is not uniform. The first column is always supergroup, but after that it ranges; for example #185, 4 entries is class level versus #190 is 3 entries and class level (see in df1). Since this is not my research project anymore and to fix this would require changing most of my project I'm going to leave it as the class_system I originally assumed it to be and remember this as a lesson to be more thorough understanding the data given to me.
+
+```{r}
+#make classification system into a list
+#for vignette- set column name of key column to geneid, and name column with the full classification as full_classification. That column needs to have the classifications in the order of "Domain","Phylum","Class","Order", "Family", "Genus", "Species". Make sure that geneid column is before full classification column in original dataframe. Domain options are "Archaea","Bacteria","Eukaryota","Viruses".
+
+class_system <- c("geneid","Domain","Phylum","Class","Order", "Family", "Genus", "Species")
+#as a function
+
+
+
+#make new df of using character to list for full classification
+#feed df1 to make df_split
+splitfull_class <- function(df){
+  df_split <- df |>
+  select(geneid,full_classification)|>
+  mutate(classification_split=str_split(string= full_classification,pattern=";",n=Inf,simplify=F))|>
+  select(geneid,classification_split)
+}
+#check:
+diditsplit <-splitfull_class(df1)
+
+#unnest the column with a list to columns with each object
+#Could use Purrr instead to be faster
+#its okay it takes a while, its making a lot of decisions about how to unnest
+separatelist_full_class <- function(df){
+  df_abund <- df|>
+    unnest_wider(classification_split, names_sep="_")|>
+    select(Domain)|>
+    mutate(Domain_fix = case_when(Domain %in% c("Archaea","Bacteria","Eukaryota","Viruses")~ Domain))
+}
+
+diditseparate
+
+#How I checked that it worked
+df_abund_domaincheck <- df_abund_domainfix |>
+  select(Domain)|>
+  mutate(Domain_fix = case_when(Domain %in% c("Archaea","Bacteria","Eukaryota","Viruses")~ Domain))|>
+  group_by(Domain_fix)|>
+  summarize(n=n())|>
+  mutate(Percentage = 100 * n/sum(n))
+
+#rename the columns to be intutive 
+colnames(df_abund) <- class_system
+#glimpse(df_abund)
 ```
 
-The `echo: false` option disables the printing of code (only output is displayed).
+```{r}
+
+#write a function to calculate abundance at input= classification level
+##the {{ }} is surrounding the data-variable, the column header, and df is the env-variable
+#any NA need to be replaced with "Unspecified"
+#Need to pull on the key in my function-> filter({{column}}) by escore, replace with "unconfident", then pipe into group_by()
+geneabund<- function(df,column){
+  df_column<- df|>
+    replace(is.na(df),"Unspecified")|>
+    group_by({{column}})|>
+    summarise(n = n())|>
+    mutate(Percentage = 100 * n/sum(n))
+  df_column
+}
+
+maybe <-geneabund(df=df_abund,column = Class)
+glimpse(maybe)
+
+```
